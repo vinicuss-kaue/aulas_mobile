@@ -1,19 +1,37 @@
 // GameScreen.js
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, StyleSheet, Image, TouchableOpacity, Alert, ImageBackground } from 'react-native';
+import { View, Text, Button, StyleSheet, Image, TouchableOpacity, Modal, Pressable, ImageBackground } from 'react-native';
 import axios from 'axios';
 
 // Importar a imagem local
 const backgroundImage = require('./assets/pokemon.webp'); // Caminho atualizado para a imagem local
 
-const GameScreen = ({ navigation }) => {
+const GameScreen = ({ route, navigation }) => {
   const [pokemon, setPokemon] = useState(null);
   const [options, setOptions] = useState([]);
   const [correctAnswer, setCorrectAnswer] = useState('');
+  const [correctCount, setCorrectCount] = useState(0); // Contador de acertos
+  const [incorrectCount, setIncorrectCount] = useState(0); // Contador de erros/pulos
+  const [questionCount, setQuestionCount] = useState(0); // Contador de perguntas
+  const [loading, setLoading] = useState(true); // Controle de carregamento
+  const [modalVisible, setModalVisible] = useState(false); // Controle de visibilidade do modal
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalType, setModalType] = useState(''); // Tipo de mensagem: 'success' ou 'error'
+  const [gameOver, setGameOver] = useState(false); // Controle se o jogo acabou
 
   useEffect(() => {
-    fetchPokemon();
-  }, []);
+    if (questionCount < 10) {
+      fetchPokemon();
+    } else {
+      setGameOver(true);
+      navigation.navigate('Result', {
+        score: {
+          correct: correctCount,
+          incorrect: incorrectCount,
+        },
+      });
+    }
+  }, [questionCount]);
 
   const fetchPokemon = async () => {
     try {
@@ -50,6 +68,7 @@ const GameScreen = ({ navigation }) => {
     
     setOptions(shuffle(names));
     setCorrectAnswer(correct);
+    setLoading(false);
   };
 
   const shuffle = (array) => {
@@ -62,28 +81,47 @@ const GameScreen = ({ navigation }) => {
 
   const handleOptionPress = (selected) => {
     if (selected === correctAnswer) {
-      showAlert("Parabéns!", "Você acertou! O Pokémon era " + correctAnswer + ".", 'success');
-      fetchPokemon(); // Carrega um novo Pokémon
+      setCorrectCount(prev => prev + 1);
+      showModal("Parabéns!", "Você acertou! O Pokémon era " + correctAnswer + ".", 'success');
     } else {
-      showAlert("Oops!", "Incorreto! Tente novamente.", 'error');
+      setIncorrectCount(prev => prev + 1);
+      showModal("Oops!", "Incorreto! O Pokémon era " + correctAnswer + ".", 'error');
     }
   };
 
-  const showAlert = (title, message, type) => {
-    Alert.alert(
-      title,
-      message,
-      [
-        {
-          text: "OK",
-          onPress: () => type === 'success' ? fetchPokemon() : null,
-        }
-      ],
-      { cancelable: false }
-    );
+  const showModal = (title, message, type) => {
+    setModalMessage(message);
+    setModalType(type);
+    setModalVisible(true);
   };
 
-  if (!pokemon) {
+  const handleModalClose = () => {
+    setModalVisible(false);
+    if (questionCount < 10) {
+      setQuestionCount(prev => prev + 1); // Incrementa a contagem de perguntas
+    } else {
+      setGameOver(true); // Define que o jogo acabou
+    }
+  };
+
+  const resetGame = () => {
+    setPokemon(null);
+    setOptions([]);
+    setCorrectAnswer('');
+    setCorrectCount(0);
+    setIncorrectCount(0);
+    setQuestionCount(0);
+    setLoading(true);
+    setGameOver(false);
+    fetchPokemon(); // Inicia o jogo novamente
+  };
+
+  const navigateToHomeAndReset = () => {
+    resetGame(); // Reseta o jogo
+    navigation.navigate('Home'); // Navega para a tela inicial
+  };
+
+  if (loading) {
     return (
       <View style={styles.container}>
         <Text style={styles.loadingText}>Carregando...</Text>
@@ -94,23 +132,56 @@ const GameScreen = ({ navigation }) => {
   return (
     <ImageBackground source={backgroundImage} style={styles.backgroundImage}>
       <View style={styles.container}>
-        <Image source={{ uri: pokemon.image }} style={styles.pokemonImage} />
-        <Text style={styles.question}>Qual é este Pokémon?</Text>
-        {options.map(option => (
-          <TouchableOpacity
-            key={option}
-            style={styles.optionButton}
-            onPress={() => handleOptionPress(option)}
-          >
-            <Text style={styles.optionText}>{option}</Text>
-          </TouchableOpacity>
-        ))}
-        <Button
-          title="Voltar para Início"
-          onPress={() => navigation.navigate('Home')}
-          color="#FF6347"
-        />
+        {pokemon && !gameOver && (
+          <>
+            <Image source={{ uri: pokemon.image }} style={styles.pokemonImage} />
+            <Text style={styles.question}>Qual é este Pokémon?</Text>
+            {options.map(option => (
+              <TouchableOpacity
+                key={option}
+                style={styles.optionButton}
+                onPress={() => handleOptionPress(option)}
+              >
+                <Text style={styles.optionText}>{option}</Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+        {gameOver && (
+          <View style={styles.buttonsContainer}>
+            <Button
+              title="Voltar para Início"
+              onPress={navigateToHomeAndReset} // Navega para a tela inicial e reseta o jogo
+              color="#FF6347"
+            />
+            <Button
+              title="Jogar Novamente"
+              onPress={() => {
+                resetGame(); // Reseta o jogo
+                fetchPokemon(); // Inicia o jogo novamente
+              }}
+              color="#4CAF50"
+            />
+          </View>
+        )}
       </View>
+      
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, modalType === 'success' ? styles.success : styles.error]}>
+            <Text style={styles.modalTitle}>{modalType === 'success' ? "Parabéns!" : "Oops!"}</Text>
+            <Text style={styles.modalMessage}>{modalMessage}</Text>
+            <Pressable style={styles.modalButton} onPress={handleModalClose}>
+              <Text style={styles.modalButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 };
@@ -137,7 +208,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginBottom: 20,
     fontWeight: 'bold',
-    color: '#fff', // Ajusta a cor do texto para garantir visibilidade no fundo
+    color: '#fff',
   },
   optionButton: {
     backgroundColor: '#4CAF50',
@@ -154,6 +225,50 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 18,
     color: '#fff',
+  },
+  buttonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  success: {
+    backgroundColor: '#4CAF50',
+  },
+  error: {
+    backgroundColor: '#F44336',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+  },
+  modalMessage: {
+    fontSize: 18,
+    color: '#fff',
+    marginBottom: 20,
+  },
+  modalButton: {
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 5,
+  },
+  modalButtonText: {
+    color: '#000',
+    fontSize: 18,
   },
 });
 
